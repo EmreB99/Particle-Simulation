@@ -1,0 +1,12 @@
+# Compiled programs (rebuild them with g++, don't commit them)
+main
+sim
+a.out
+*.o
+*.out
+*.dSYM/
+
+# macOS / editor clutter
+.DS_Store
+.vscode/
+.idea/

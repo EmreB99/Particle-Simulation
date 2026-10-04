@@ -1,0 +1,178 @@
+// =====================================================================
+//  Particle Simulation
+//  Emre Bilgen
+//
+// =====================================================================
+
+#include <iostream>
+#include <cmath>
+#include <vector>
+
+// Constants
+const double G = 1.0, k = 1.0, eps = 0.1;
+
+// 2D Vector creation
+struct Vec2 {
+    double x = 0.0;
+    double y = 0.0;
+
+    // Vector operations
+    Vec2 operator+(const Vec2& other) const {
+        return {x + other.x, y + other.y};
+    }
+    Vec2 operator-(const Vec2& other) const {
+        return {x - other.x, y - other.y};
+    }
+    Vec2 operator*(double scalar) const {
+        return {x * scalar, y * scalar};
+    }
+    Vec2 operator/(double scalar) const {
+        return {x / scalar, y / scalar};
+    }
+    Vec2& operator+=(const Vec2& other) {
+        x += other.x;
+        y += other.y;
+        return *this;
+    }
+    Vec2& operator-=(const Vec2& other) {
+        x -= other.x;
+        y -= other.y;
+        return *this;
+    }
+    double lengthSquared() const {
+        return x*x+y*y;
+    }
+    double length() const {
+        return std::sqrt(lengthSquared());
+    }
+    Vec2 normalized() const {
+        double len = length();
+        if (len < 0.001) return{0, 0};
+        double i_hat = x/len, j_hat = y/len;
+        return {i_hat, j_hat};
+    }
+};
+// Printing cout in Vec2
+std::ostream& operator<<(std::ostream& os, const Vec2& v) {
+    return os << "(" << v.x << ", " << v.y << ")";
+}
+// Dot product
+double dot(const Vec2& a, const Vec2& b) {
+    return a.x*b.x+a.y*b.y;
+}
+// Scalar multiplication but with scalar*vector
+Vec2 operator*(double s, const Vec2& v){
+    return {s*v.x, s*v.y};
+}
+
+// Particle
+struct Particle {
+    double mass = 1.0, charge = 0.0, radius = 1.0;
+    Vec2 pos, vel, force;  
+};
+
+// Gravitational force
+Vec2 gravityForce(const Particle& a, const Particle& b) {
+    Vec2 r = b.pos - a.pos;
+    double d2 = r.lengthSquared() + eps*eps; // distance squared => d^2 => d2
+    Vec2 gForce = ((G*a.mass*b.mass)/std::pow(d2, 1.5))*r; // Scalar: (G*a.mass*b.mass)/std::pow(d2, 1.5) hidden inside is r_hat, makes gForce a vector
+    return gForce;
+}
+
+// Electrical force
+Vec2 electricForce(const Particle& a, const Particle& b) {
+    Vec2 r = b.pos - a.pos;
+    double d2 = r.lengthSquared() + eps*eps;
+    Vec2 eForce = (-(k*a.charge*b.charge)/std::pow(d2, 1.5))*r; // minus(-) in the numirator because same chages repel, opposites attract
+    return eForce;
+}
+
+void computeForces(std::vector<Particle>& particles) {
+    const size_t N = particles.size();
+    
+    for(size_t i = 0; i < N; i++){
+        particles[i].force = {0,0}; // Reset all forces to 0 before calculation
+    }
+
+    for (size_t i = 0; i < N; i++) {
+        for(size_t j = i+1; j < N; j++) {
+            Vec2 F = gravityForce(particles[i], particles[j]) + electricForce(particles[i], particles[j]);
+            particles[i].force += F;
+            particles[j].force -= F;
+        }
+    }
+}
+
+void integrate(std::vector<Particle>& particles, double dt) {
+    const size_t N = particles.size();
+
+    for (size_t i = 0; i < N; i++) {
+        //Calculating acceleration, velocity, and displacement
+        Vec2 a = particles[i].force / particles[i].mass;
+        Vec2 v = particles[i].vel;
+        Vec2 x = particles[i].pos;
+        v += a * dt;
+        x += v * dt;
+        //Collision detection
+
+
+        particles[i].vel = v;
+        particles[i].pos = x;
+    }
+}
+
+
+int main() {
+
+    // Creating particles
+    std::vector<Particle> particles;
+    //Testing Electrical Force
+    Particle a;
+    a.pos = {-5, 0};
+    a.mass = 1;
+    a.charge = +1;
+    a.vel = {0, 0};
+    particles.push_back(a);
+    Particle b;
+    b.pos = {5, 0};
+    b.mass = 1;
+    b.charge = -1;
+    b.vel = {0, 0};
+    particles.push_back(b);
+
+    //Testing Gravitational Force
+        // Particle a;
+        // a.pos = {1, 1};
+        // a.mass = 2.0;
+        // particles.push_back(a);
+        // Particle b;
+        // b.pos = {2, 0};
+        // b.mass = 3.0;
+        // particles.push_back(b);
+        // Particle c;
+        // c.pos = {-1, 3};
+        // c.mass = 1.5;
+        // particles.push_back(c);
+        // Particle d;
+        // d.pos = {-3, 2};
+        // d.mass = 0.8;
+        // particles.push_back(d);
+
+    // Constants of experiment
+    const size_t N = particles.size();
+    const double dt = 0.001;
+    const int numSteps = 60000; //Number of calculations
+
+    // Main force-position loop
+    for (int step = 0; step < numSteps; step++) {
+        computeForces(particles);
+        integrate(particles, dt);
+        if (step % 500 == 0){
+            std::cout << "---" << (step + 1) * dt << "s ---\n";
+            for (size_t i = 0; i < N; i++) {
+                std::cout << "Particle " << i << " Position: " << particles[i].pos << " Force: " << particles[i].force << "\n";
+            }
+        }
+    }
+    return 0;
+}
