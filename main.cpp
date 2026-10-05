@@ -9,7 +9,7 @@
 #include <vector>
 
 // Constants
-const double G = 1.0, k = 1.0, eps = 0.1;
+const double G = 1.0, k = 1.0, eps = 0.1, e = 1.0;  // G = Gravitational Constant, k = Coulomb Constant, eps = epsalon (error), e = elasticity;
 
 // 2D Vector creation
 struct Vec2 {
@@ -67,15 +67,15 @@ Vec2 operator*(double s, const Vec2& v){
 
 // Particle
 struct Particle {
-    double mass = 1.0, charge = 0.0, radius = 1.0;
+    double mass = 1.0, charge = 0.0, radius = 1.0, restitution = 1.0;
     Vec2 pos, vel, force;  
 };
 
 // Gravitational force
 Vec2 gravityForce(const Particle& a, const Particle& b) {
     Vec2 r = b.pos - a.pos;
-    double d2 = r.lengthSquared() + eps*eps; // distance squared => d^2 => d2
-    Vec2 gForce = ((G*a.mass*b.mass)/std::pow(d2, 1.5))*r; // Scalar: (G*a.mass*b.mass)/std::pow(d2, 1.5) hidden inside is r_hat, makes gForce a vector
+    double d2 = r.lengthSquared() + eps*eps;                // distance squared => d^2 => d2
+    Vec2 gForce = ((G*a.mass*b.mass)/std::pow(d2, 1.5))*r;  // Scalar: (G*a.mass*b.mass)/std::pow(d2, 1.5) hidden inside is r_hat, makes gForce a vector
     return gForce;
 }
 
@@ -95,7 +95,7 @@ void computeForces(std::vector<Particle>& particles) {
     }
 
     for (size_t i = 0; i < N; i++) {
-        for(size_t j = i+1; j < N; j++) {
+        for(size_t j = i + 1; j < N; j++) {
             Vec2 F = gravityForce(particles[i], particles[j]) + electricForce(particles[i], particles[j]);
             particles[i].force += F;
             particles[j].force -= F;
@@ -113,11 +113,44 @@ void integrate(std::vector<Particle>& particles, double dt) {
         Vec2 x = particles[i].pos;
         v += a * dt;
         x += v * dt;
-        //Collision detection
-
-
         particles[i].vel = v;
         particles[i].pos = x;
+    }
+}
+
+void handleCollisions(std::vector<Particle>& particles) {
+    const size_t N = particles.size();
+
+    for (size_t i = 0; i < N; i++) {
+        for (size_t j = i + 1; j < N; j++) {
+            Vec2 r = particles[j].pos - particles[i].pos;   // Distance between 2 particles in vector format
+            double d2 = r.lengthSquared();                  // Magnitute^2
+            
+            if (d2 < (particles[j].radius + particles[i].radius) * (particles[j].radius + particles[i].radius)) {   // Collision check
+                double distance = std::sqrt(d2);    // Magnitute
+                Vec2 n;                             // Normal vector relative to pos i and j
+                if (distance < 1e-12) {
+                    n = {1, 0};                     // any direction works; they just need to be pushed apart
+                    distance = 0.0;
+                } else {
+                    n = r / distance;
+                } 
+                Vec2 n = r / distance;    
+                double overlap = (particles[j].radius+particles[i].radius) - distance;
+                double w_i = (1/particles[i].mass)/(1/particles[i].mass + 1/particles[j].mass);
+                double w_j = (1/particles[j].mass)/(1/particles[i].mass + 1/particles[j].mass);
+                // if overlap is more than 0, change the position of particles based on the overlap
+                particles[i].pos -= n * overlap * w_i;
+                particles[j].pos += n * overlap * w_j;
+                // Collision physics
+                double vn = dot((particles[j].vel - particles[i].vel), n);  // scalar of (vj-vi) of n
+                if (vn < 0) {                                               // are they moving towards each other?
+                    double J = -(1 + e)*vn/(1/particles[i].mass + 1/particles[j].mass);
+                    particles[i].vel -= (J/particles[i].mass) * n;
+                    particles[j].vel += (J/particles[j].mass) * n;
+                }
+            }
+        }
     }
 }
 
@@ -167,6 +200,7 @@ int main() {
     for (int step = 0; step < numSteps; step++) {
         computeForces(particles);
         integrate(particles, dt);
+        handleCollisions(particles);
         if (step % 500 == 0){
             std::cout << "---" << (step + 1) * dt << "s ---\n";
             for (size_t i = 0; i < N; i++) {
