@@ -23,8 +23,7 @@ g++ -std=c++17 -Wall -Wextra main.cpp -o sim
 ./sim
 ```
 
-## Roadmap
-- Elastic / inelastic collisions between particles, and walls
+## To-do list
 - Energy diagnostic (kinetic + potential) to measure numerical error
 - CSV output + Python animation
 - Velocity Verlet integrator, adaptive time step
