@@ -7,9 +7,11 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
+#include <algorithm>
 
 // Constants
-const double G = 1.0, k = 1.0, eps = 0.1, e = 1.0;  // G = Gravitational Constant, k = Coulomb Constant, eps = epsalon (error), e = elasticity;
+const double G = 1.0, k = 1.0, eps = 0.1;  // G = Gravitational Constant, k = Coulomb Constant, eps = softening length (keeps forces finite as r -> 0)
+const double boxHalf = 10.0;                // Box spans -boxHalf +boxHalf on both axes (20 x 20)
 
 // 2D Vector creation
 struct Vec2 {
@@ -75,7 +77,7 @@ struct Particle {
 Vec2 gravityForce(const Particle& a, const Particle& b) {
     Vec2 r = b.pos - a.pos;
     double d2 = r.lengthSquared() + eps*eps;                // distance squared => d^2 => d2
-    Vec2 gForce = ((G*a.mass*b.mass)/std::pow(d2, 1.5))*r;  // Scalar: (G*a.mass*b.mass)/std::pow(d2, 1.5) hidden inside is r_hat, makes gForce a vector
+    Vec2 gForce = ((G*a.mass*b.mass)/(d2 * std::sqrt(d2)))*r;  // Scalar: (G*a.mass*b.mass)/(d2 * std::sqrt(d2)) hidden inside is r_hat, makes gForce a vector
     return gForce;
 }
 
@@ -83,7 +85,7 @@ Vec2 gravityForce(const Particle& a, const Particle& b) {
 Vec2 electricForce(const Particle& a, const Particle& b) {
     Vec2 r = b.pos - a.pos;
     double d2 = r.lengthSquared() + eps*eps;
-    Vec2 eForce = (-(k*a.charge*b.charge)/std::pow(d2, 1.5))*r; // minus(-) in the numirator because same chages repel, opposites attract
+    Vec2 eForce = (-(k*a.charge*b.charge)/(d2 * std::sqrt(d2)))*r; // minus(-) in the numerator because same charges repel, opposites attract
     return eForce;
 }
 
@@ -124,18 +126,17 @@ void handleCollisions(std::vector<Particle>& particles) {
     for (size_t i = 0; i < N; i++) {
         for (size_t j = i + 1; j < N; j++) {
             Vec2 r = particles[j].pos - particles[i].pos;   // Distance between 2 particles in vector format
-            double d2 = r.lengthSquared();                  // Magnitute^2
+            double d2 = r.lengthSquared();                  // Magnitude^2
             
             if (d2 < (particles[j].radius + particles[i].radius) * (particles[j].radius + particles[i].radius)) {   // Collision check
-                double distance = std::sqrt(d2);    // Magnitute
+                double distance = std::sqrt(d2);    // Magnitude
                 Vec2 n;                             // Normal vector relative to pos i and j
                 if (distance < 1e-12) {
                     n = {1, 0};                     // any direction works; they just need to be pushed apart
                     distance = 0.0;
                 } else {
                     n = r / distance;
-                } 
-                Vec2 n = r / distance;    
+                }   
                 double overlap = (particles[j].radius+particles[i].radius) - distance;
                 double w_i = (1/particles[i].mass)/(1/particles[i].mass + 1/particles[j].mass);
                 double w_j = (1/particles[j].mass)/(1/particles[i].mass + 1/particles[j].mass);
@@ -145,11 +146,37 @@ void handleCollisions(std::vector<Particle>& particles) {
                 // Collision physics
                 double vn = dot((particles[j].vel - particles[i].vel), n);  // scalar of (vj-vi) of n
                 if (vn < 0) {                                               // are they moving towards each other?
-                    double J = -(1 + e)*vn/(1/particles[i].mass + 1/particles[j].mass);
+                    double J = -(1 + std::min(particles[i].restitution, particles[j].restitution))*vn/(1/particles[i].mass + 1/particles[j].mass);
                     particles[i].vel -= (J/particles[i].mass) * n;
                     particles[j].vel += (J/particles[j].mass) * n;
                 }
             }
+        }
+    }
+}
+
+void handleWalls(std::vector<Particle>& particles) {
+    const size_t N = particles.size();
+
+    for (size_t i = 0; i < N; i++) {
+        Particle& p = particles[i];
+        
+        // Wall collision check
+        if (p.pos.x > boxHalf - p.radius && p.vel.x > 0) {  // right wall
+            p.pos.x = boxHalf - p.radius;                   // clamp: put it back on the wall
+            p.vel.x = -p.restitution * p.vel.x;             // bounce
+        }
+        if (p.pos.x < p.radius - boxHalf && p.vel.x < 0) {  // left wall
+            p.pos.x = p.radius - boxHalf;             
+            p.vel.x = -p.restitution * p.vel.x;                         
+        }
+        if (p.pos.y > boxHalf - p.radius && p.vel.y > 0) {  // up wall 
+            p.pos.y = boxHalf - p.radius;                   
+            p.vel.y = -p.restitution * p.vel.y;                         
+        }
+        if (p.pos.y < p.radius - boxHalf && p.vel.y < 0) {  // down wall
+            p.pos.y = p.radius - boxHalf;                   
+            p.vel.y = -p.restitution * p.vel.y;                         
         }
     }
 }
@@ -201,6 +228,7 @@ int main() {
         computeForces(particles);
         integrate(particles, dt);
         handleCollisions(particles);
+        handleWalls(particles);
         if (step % 500 == 0){
             std::cout << "---" << (step + 1) * dt << "s ---\n";
             for (size_t i = 0; i < N; i++) {
