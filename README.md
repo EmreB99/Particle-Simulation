@@ -16,6 +16,7 @@ gravity, electric (Coulomb) forces, collisions, and eventually a black hole bend
 - Two equal charges with q² = m² (G = k = 1): gravity and repulsion cancel exactly, so nothing moves
 - Two-body free-fall time matches the analytic result t = (π/2)·√(r₀³ / (2GM))
 - Smaller time step → the oscillation returns to its starting amplitude, as energy conservation requires
+- Elastic / inelastic collisions between particles, and walls
 
 ## Build and run
 ```bash
