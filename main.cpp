@@ -1,16 +1,27 @@
-// =====================================================================
+// =========================
 //  Particle Simulation
 //  Emre Bilgen
-// =====================================================================
+// =========================
 
 #include <iostream>
 #include <cmath>
 #include <vector>
 #include <algorithm>
+#include <random>
+#include <chrono>     // timing
 
-// Constants
-const double G = 1.0, k = 1.0, eps = 0.1;  // G = Gravitational Constant, k = Coulomb Constant, eps = softening length (keeps forces finite as r -> 0)
-const double boxHalf = 10.0;                // Box spans -boxHalf +boxHalf on both axes (20 x 20)
+
+// =========================
+//        Constants
+// =========================
+
+const double G = 1.0, k = 1.0, eps = 0.1;                   // G = Gravitational Constant, k = Coulomb Constant, eps = softening length (keeps forces finite as r -> 0)
+const double boxHalf = 10.0;                                // Box spans -boxHalf +boxHalf on both axes (20 x 20)
+
+
+//=========================
+//   Particle Creation
+// =========================
 
 // 2D Vector creation
 struct Vec2 {
@@ -53,14 +64,17 @@ struct Vec2 {
         return {i_hat, j_hat};
     }
 };
+
 // Printing cout in Vec2
 std::ostream& operator<<(std::ostream& os, const Vec2& v) {
     return os << "(" << v.x << ", " << v.y << ")";
 }
+
 // Dot product
 double dot(const Vec2& a, const Vec2& b) {
     return a.x*b.x+a.y*b.y;
 }
+
 // Scalar multiplication but with scalar*vector
 Vec2 operator*(double s, const Vec2& v){
     return {s*v.x, s*v.y};
@@ -72,10 +86,64 @@ struct Particle {
     Vec2 pos, vel, force;  
 };
 
+// Create a random particle
+Particle randomParticle(std::mt19937& rng) {
+    Particle p;
+    p.radius = 0.3; // Create random radius for each particle later
+
+    std::uniform_real_distribution<double> posDist(-boxHalf + p.radius, boxHalf - p.radius);
+    p.pos.x = posDist(rng);
+    p.pos.y = posDist(rng);
+
+    std::uniform_real_distribution<double> mass(0.5, 3.0);
+    p.mass = mass(rng);
+    std::uniform_real_distribution<double> charge(-1.0, +1.0);
+    p.charge = charge(rng);
+    return p;
+}
+
+// Create any amount of random particles
+std::vector<Particle> createParticles(size_t N, std::mt19937& rng) {
+    std::vector<Particle> result;
+    size_t attempts = 0;                // Attempt count
+    const size_t maxAttempts = 100 * N; // Max number of attempts, if attempt number is exceeded than break the while loop
+
+
+    while (result.size() < N && attempts < maxAttempts) {
+        attempts++;
+        Particle candidate = randomParticle(rng);   // Create particle
+        bool overlaps = false;
+
+        for (size_t j = 0; j < result.size(); j++) {
+            Vec2 r = result[j].pos - candidate.pos;
+            double minDist = candidate.radius +result[j].radius;    // Disadvantage between new particle and any particle
+
+            if (r.lengthSquared() < minDist * minDist) {            // Overlap condition
+                overlaps = true;
+                break;
+            }
+        }
+
+        if (!overlaps) {    // If it does not overlap push the particle
+            result.push_back(candidate);
+        }
+    }
+
+    if (result.size() < N) {    // If box is too crowded, only place x amount of particles
+        std::cout << "Warning: only placed " << result.size() << " of " << N 
+                  << " particles (box too crowded)\n";
+    }
+    return result;
+}
+
+// =========================
+//   Physics Computation
+// =========================
+
 // Gravitational force
 Vec2 gravityForce(const Particle& a, const Particle& b) {
     Vec2 r = b.pos - a.pos;
-    double d2 = r.lengthSquared() + eps*eps;                // distance squared => d^2 => d2
+    double d2 = r.lengthSquared() + eps*eps;                   // distance squared => d^2 => d2
     Vec2 gForce = ((G*a.mass*b.mass)/(d2 * std::sqrt(d2)))*r;  // Scalar: (G*a.mass*b.mass)/(d2 * std::sqrt(d2)) hidden inside is r_hat, makes gForce a vector
     return gForce;
 }
@@ -84,10 +152,20 @@ Vec2 gravityForce(const Particle& a, const Particle& b) {
 Vec2 electricForce(const Particle& a, const Particle& b) {
     Vec2 r = b.pos - a.pos;
     double d2 = r.lengthSquared() + eps*eps;
-    Vec2 eForce = (-(k*a.charge*b.charge)/(d2 * std::sqrt(d2)))*r; // minus(-) in the numerator because same charges repel, opposites attract
+    Vec2 eForce = (-(k*a.charge*b.charge)/(d2 * std::sqrt(d2)))*r;  // minus(-) in the numerator because same charges repel, opposites attract
     return eForce;
 }
 
+// Pairing forces gravitiyForce + electricForce
+Vec2 pairForce(const Particle& a, const Particle& b) {
+    Vec2 r = b.pos - a.pos;
+    double d2 = r.lengthSquared() + eps*eps;
+    double totald = d2 * std::sqrt(d2);
+    double scale = (G*a.mass*b.mass - k*a.charge*b.charge) / totald;   // gravity (+) and Coulomb (-) folded into one number
+    return scale * r;
+}
+
+// Total force acted upon each particle relative to all particles
 void computeForces(std::vector<Particle>& particles) {
     const size_t N = particles.size();
     
@@ -97,7 +175,7 @@ void computeForces(std::vector<Particle>& particles) {
 
     for (size_t i = 0; i < N; i++) {
         for(size_t j = i + 1; j < N; j++) {
-            Vec2 F = gravityForce(particles[i], particles[j]) + electricForce(particles[i], particles[j]);
+            Vec2 F = pairForce(particles[i], particles[j]);
             particles[i].force += F;
             particles[j].force -= F;
         }
@@ -119,6 +197,7 @@ void integrate(std::vector<Particle>& particles, double dt) {
     }
 }
 
+// Collision physics between 2 particles
 void handleCollisions(std::vector<Particle>& particles) {
     const size_t N = particles.size();
 
@@ -154,6 +233,7 @@ void handleCollisions(std::vector<Particle>& particles) {
     }
 }
 
+// Collision physics between the particle and any wall
 void handleWalls(std::vector<Particle>& particles) {
     const size_t N = particles.size();
 
@@ -180,47 +260,38 @@ void handleWalls(std::vector<Particle>& particles) {
     }
 }
 
+// Total energy calculation
+double totalEnergy(const std::vector<Particle>& particles) {
+    const size_t N = particles.size();
+    double KE = 0.0;    // Kinetic energy
+    double PE = 0.0;    // Potential energy
+    
+    for (size_t i = 0; i < N; i++) {
+        KE += 0.5 * particles[i].mass * (particles[i].vel.lengthSquared());
+        for (size_t j = i + 1; j < N; j++) {
+            Vec2 r = particles[j].pos - particles[i].pos;
+            double d2 = r.lengthSquared() + eps*eps;
+            PE += (-G*particles[i].mass*particles[j].mass + k*particles[i].charge*particles[j].charge)/std::sqrt(d2);
+        }
+    }
+    return KE + PE;
+}
 
 int main() {
 
     // Creating particles
-    std::vector<Particle> particles;
-    //Testing Electrical Force
-    Particle a;
-    a.pos = {-5, 0};
-    a.mass = 1;
-    a.charge = +1;
-    a.vel = {0, 0};
-    particles.push_back(a);
-    Particle b;
-    b.pos = {5, 0};
-    b.mass = 1;
-    b.charge = -1;
-    b.vel = {0, 0};
-    particles.push_back(b);
-
-    //Testing Gravitational Force
-        // Particle a;
-        // a.pos = {1, 1};
-        // a.mass = 2.0;
-        // particles.push_back(a);
-        // Particle b;
-        // b.pos = {2, 0};
-        // b.mass = 3.0;
-        // particles.push_back(b);
-        // Particle c;
-        // c.pos = {-1, 3};
-        // c.mass = 1.5;
-        // particles.push_back(c);
-        // Particle d;
-        // d.pos = {-3, 2};
-        // d.mass = 0.8;
-        // particles.push_back(d);
+    std::mt19937 rng(42);                                       // the generator (seed 42)
+    std::vector<Particle> particles = createParticles(50, rng);
 
     // Constants of experiment
     const size_t N = particles.size();
     const double dt = 0.001;
     const int numSteps = 60000; //Number of calculations
+
+    const double E0 = totalEnergy(particles);                   // energy at t = 0, to measure drift against
+    std::cout << "Initial energy: " << E0 << "\n";
+
+    auto startTime = std::chrono::steady_clock::now();          // start the timer
 
     // Main force-position loop
     for (int step = 0; step < numSteps; step++) {
@@ -228,12 +299,19 @@ int main() {
         integrate(particles, dt);
         handleCollisions(particles);
         handleWalls(particles);
+
         if (step % 500 == 0){
             std::cout << "---" << (step + 1) * dt << "s ---\n";
             for (size_t i = 0; i < N; i++) {
                 std::cout << "Particle " << i << " Position: " << particles[i].pos << " Force: " << particles[i].force << "\n";
             }
+            double E = totalEnergy(particles);                  // once per block: it's the energy of the whole system
+            std::cout << "Total energy: " << E << "   drift: " << 100.0 * (E - E0) / std::fabs(E0) << " %\n";
         }
     }
+
+    auto endTime = std::chrono::steady_clock::now();            // stop the timer
+    double seconds = std::chrono::duration<double>(endTime - startTime).count();
+    std::cout << "Simulated " << numSteps << " steps of " << N << " particles in " << seconds << " s\n";
     return 0;
 }
