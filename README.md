@@ -17,6 +17,9 @@ gravity, electric (Coulomb) forces, collisions, and eventually a black hole bend
 - Two-body free-fall time matches the analytic result t = (π/2)·√(r₀³ / (2GM))
 - Smaller time step → the oscillation returns to its starting amplitude, as energy conservation requires
 - Elastic / inelastic collisions between particles, and walls
+- Energy diagnostic (kinetic + potential) to measure numerical error
+- CSV output + Python animation
+- Velocity Verlet integrator, adaptive time step
 
 ## Build and run
 ```bash
@@ -25,8 +28,5 @@ g++ -std=c++17 -Wall -Wextra main.cpp -o sim
 ```
 
 ## To-do list
-- Energy diagnostic (kinetic + potential) to measure numerical error
-- CSV output + Python animation
-- Velocity Verlet integrator, adaptive time step
 - Move to 3D
 - Black hole + photons

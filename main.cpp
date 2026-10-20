@@ -2,49 +2,84 @@
 //  Particle Simulation
 //  Emre Bilgen
 // =========================
+//
+// Build & run (from this folder):
+//   clang++ -std=c++17 -O2 -Wall -Wextra *.cpp $(pkg-config --cflags --libs raylib) -o sim
+//   ./sim
 
-#include <iostream>
 #include <cmath>
 #include <random>
-#include <chrono>
+#include <vector>
+#include "constants.h"
 #include "particle.h"
 #include "physics.h"
+#include "raylib.h"
+
+// =========================
+//   Screen settings
+// =========================
+
+const int   screenSize = 800;                                   // window is screenSize x screenSize pixels
+const float scale      = screenSize / (2.0f * (float)boxHalf);  // pixels per world unit (800 / 20 = 40)
+
+// World (-boxHalf..+boxHalf, y up)  ->  screen (0..screenSize, y down)
+Vector2 worldToScreen(const Vec2& world) {
+    Vector2 s;
+    s.x = (float)((world.x + boxHalf) * scale);   // shift so -boxHalf -> 0, then scale
+    s.y = (float)((boxHalf - world.y) * scale);   // distance BELOW the top (+boxHalf): flips y
+    return s;
+}
+
+// Color by charge: red = positive, blue = negative, white = (almost) neutral
+Color chargeColor(double charge) {
+    if (charge >  0.05) return RED;
+    if (charge < -0.05) return BLUE;
+    return WHITE;
+}
 
 int main() {
-
-    // Creating particles
-    std::mt19937 rng(42);                                       // the generator (seed 42)
+    // Particles
+    std::mt19937 rng(102);                                       // the generator (seed 42)
     std::vector<Particle> particles = createParticles(50, rng);
 
-    // Constants of experiment
-    const size_t N = particles.size();
-    const double dt = 0.001;
-    const int numSteps = 60000; //Number of calculations
+    // Time stepping
+    const double dt = 0.001;                                    // physics step
+    const int stepsPerFrame = 17;                               // (1/60 s) / dt ≈ 17 -> real-time speed
+    double simTime = 0.0;                                       // simulated seconds so far
 
     const double E0 = totalEnergy(particles);                   // energy at t = 0, to measure drift against
-    std::cout << "Initial energy: " << E0 << "\n";
 
-    auto startTime = std::chrono::steady_clock::now();          // start the timer
+    // Window
+    InitWindow(screenSize, screenSize, "Particle Simulation");
+    SetTargetFPS(60);
 
-    // Main force-position loop
-    for (int step = 0; step < numSteps; step++) {
-        computeForces(particles);
-        integrate(particles, dt);
-        handleCollisions(particles);
-        handleWalls(particles);
-
-        if (step % 500 == 0){
-            std::cout << "---" << (step + 1) * dt << "s ---\n";
-            for (size_t i = 0; i < N; i++) {
-                std::cout << "Particle " << i << " Position: " << particles[i].pos << " Force: " << particles[i].force << "\n";
-            }
-            double E = totalEnergy(particles);                  // once per block: it's the energy of the whole system
-            std::cout << "Total energy: " << E << "   drift: " << 100.0 * (E - E0) / std::fabs(E0) << " %\n";
+    while (!WindowShouldClose()) {                              // until Esc or the window is closed
+        // 1. CALCULATE PHYSICS
+        for (int step = 0; step < stepsPerFrame; step++) {
+            computeForces(particles);
+            integrate(particles, dt);
+            handleCollisions(particles);
+            handleWalls(particles);
         }
+        simTime += stepsPerFrame * dt;
+
+        // 2. DRAWING
+        BeginDrawing();
+        ClearBackground(BLACK);
+
+        for (const Particle& p : particles) {                  // "for each particle p in particles"
+            DrawCircleV(worldToScreen(p.pos), (float)(p.radius * scale), chargeColor(p.charge));
+        }
+
+        // Info text: time and energy drift (once per frame)
+        // double E = totalEnergy(particles);
+        // DrawText(TextFormat("t = %.1f s   energy drift = %.2f %%", simTime, 100.0 * (E - E0) / std::fabs(E0)),
+        //          10, 10, 20, RAYWHITE);
+        // DrawFPS(10, 35);
+
+        EndDrawing();
     }
 
-    auto endTime = std::chrono::steady_clock::now();            // stop the timer
-    double seconds = std::chrono::duration<double>(endTime - startTime).count();
-    std::cout << "Simulated " << numSteps << " steps of " << N << " particles in " << seconds << " s\n";
+    CloseWindow();
     return 0;
 }

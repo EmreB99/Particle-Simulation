@@ -10,3 +10,6 @@ a.out
 .DS_Store
 .vscode/
 .idea/
+
+# raylib test binary
+hello

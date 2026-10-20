@@ -5,7 +5,7 @@
 // =========================
 
 // Physical constants (simulation units)
-constexpr double G   = 1.0;     // gravitational constant
+constexpr double G   = 0.05;     // gravitational constant
 constexpr double k   = 1.0;     // Coulomb constant
 constexpr double eps = 0.1;     // softening length (keeps forces finite as r -> 0)
 
